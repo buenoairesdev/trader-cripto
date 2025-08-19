@@ -1,0 +1,14 @@
+# Ignorar ambientes virtuais
+venv/
+.env/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Banco de dados SQLite (se não quiser versionar)
+*.db
+
+# VSCode configs
+.vscode/
