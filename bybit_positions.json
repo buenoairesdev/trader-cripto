@@ -1,0 +1,24 @@
+[
+  {
+    "symbol": "ETHUSDT",
+    "side": "Buy",
+    "size": "0.28",
+    "leverage": "21",
+    "avgPrice": "2218.39035714",
+    "markPrice": "2555.11",
+    "unrealisedPnl": "94.2815",
+    "positionValue": "621.1493",
+    "liqPrice": ""
+  },
+  {
+    "symbol": "BTCUSDT",
+    "side": "Buy",
+    "size": "0.001",
+    "leverage": "21",
+    "avgPrice": "108031.5",
+    "markPrice": "103255.9",
+    "unrealisedPnl": "-4.7756",
+    "positionValue": "108.0315",
+    "liqPrice": ""
+  }
+]
