@@ -6,6 +6,7 @@ import json
 import os
 
 # --- Importações de Módulos Locais ---
+# Forçando a releitura do módulo
 import config
 from bybit_data import fetch_bybit_kline
 from indicadores import (calcular_atr, calcular_sentimento_vader,
