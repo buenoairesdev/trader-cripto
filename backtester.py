@@ -168,7 +168,7 @@ class EstrategiaMultiIndicador(Strategy):
 
             # Se uma condição de entrada foi atendida
             if entrada_compra or entrada_venda:
-                # print(f"ORDEM [{self.asset_name_param}] em {current_time_idx}: Tentando {'COMPRA' if entrada_compra else 'VENDA'} @{preco_atual:.4f}")
+                preco_atual = self.data.Close[-1]
                 preco_entrada = preco_atual
                 # Calcula o tamanho da posição com base na fração do equity
                 size_to_use = self.equity_fraction_per_trade
