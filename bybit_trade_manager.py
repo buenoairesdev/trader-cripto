@@ -6,10 +6,7 @@ import time
 from datetime import datetime
 import json
 import traceback # Para logar exceções completas
-
-# --- Configurações das Chaves API (MUITO IMPORTANTE!) ---
-# TESTNET_MODE = True (definido mais abaixo)
-# TRADE_CATEGORY = 'linear' (definido mais abaixo)
+from dotenv import load_dotenv
 
 # --- DEFINIÇÃO GLOBAL DO CAMINHO DO ARQUIVO JSON ---
 # Esta variável agora é global e acessível em todo o script.
@@ -17,9 +14,7 @@ SCRIPT_DIR_BTM = os.path.dirname(os.path.abspath(__file__))
 BYBIT_POSITIONS_JSON_FILE = os.path.join(SCRIPT_DIR_BTM, 'bybit_positions.json')
 # --- FIM DA DEFINIÇÃO GLOBAL ---
 
-# --- Configurações Globais para o Teste (se ainda as tiver aqui) ---
-TESTNET_MODE = True 
-TRADE_CATEGORY = 'linear'
+TRADE_CATEGORY = 'linear' # Categoria de trading para futuros lineares (USDT)
 
 class BybitTradeManager:
     """
@@ -411,146 +406,63 @@ class BybitTradeManager:
             print(f"ERRO CRÍTICO NO LOOP DE MONITORAMENTO PARA JSON: {e_loop}")
             traceback.print_exc()
 
-# --- Configurações Globais para o Teste ---
-TESTNET_MODE = True 
-TRADE_CATEGORY = 'linear'
-
 # --- Exemplo de Uso e Teste ---
 if __name__ == "__main__":
-    print("--- INICIANDO TESTE DO BYBIT TRADE MANAGER ---")
-    
-    # SUBSTITUA PELAS SUAS CHAVES REAIS DA TESTNET SE AS ABAIXO NÃO FUNCIONAREM
-    bybit_api_key = "IRL7oTXuqQFGhExTbC" 
-    bybit_api_secret = "3wR5DqhQI0BbpbkUJsp33uRmVVQ6dLL0DidL"
+    print("--- INICIANDO O MONITOR DE POSIÇÕES BYBIT ---")
 
-    if not bybit_api_key or not bybit_api_secret or \
-       bybit_api_key == "SUA_CHAVE_API_DA_BYBIT_TESTNET" or \
-       bybit_api_secret == "SEU_SEGREDO_API_DA_BYBIT_TESTNET":
-        print("AVISO CRÍTICO: Por favor, configure suas chaves API da Bybit TESTNET válidas no código.")
-        print("Você pode obter chaves da Testnet em: https://testnet.bybit.com/.")
+    # Carrega as variáveis de ambiente do arquivo .env
+    load_dotenv()
+
+    # Determina o modo (Testnet ou Mainnet) a partir da variável de ambiente
+    # O valor padrão é 'true' se a variável não estiver definida
+    testnet_mode_str = os.getenv("TESTNET", "true").lower()
+    IS_TESTNET = testnet_mode_str == 'true'
+
+    # Seleciona as chaves de API corretas com base no modo
+    if IS_TESTNET:
+        api_key = os.getenv("BYBIT_API_KEY_TESTNET")
+        api_secret = os.getenv("BYBIT_API_SECRET_TESTNET")
+        print("Modo: TESTNET")
+    else:
+        api_key = os.getenv("BYBIT_API_KEY_MAINNET")
+        api_secret = os.getenv("BYBIT_API_SECRET_MAINNET")
+        print("Modo: MAINNET (REAL)")
+
+    # Validação das chaves de API
+    if not api_key or not api_secret:
+        print("\nERRO CRÍTICO: Chaves de API não encontradas no ambiente.")
+        print("Por favor, crie um arquivo .env (a partir do .env.example) e defina suas chaves.")
+        print("Exemplo para Testnet:")
+        print('  TESTNET="true"')
+        print('  BYBIT_API_KEY_TESTNET="SUA_CHAVE_TESTNET"')
+        print('  BYBIT_API_SECRET_TESTNET="SEU_SEGREDO_TESTNET"')
         exit()
 
+    # Inicializa o gerenciador de trade
     trade_manager = BybitTradeManager(
-        api_key=bybit_api_key,
-        api_secret=bybit_api_secret,
-        testnet=TESTNET_MODE,
+        api_key=api_key,
+        api_secret=api_secret,
+        testnet=IS_TESTNET,
         category=TRADE_CATEGORY
     )
 
-    print("\n--- Realizando testes básicos da API ---")
-    symbol_test = "SOLUSDT"
-    alavancagem_test = 21
-    qty_test = 0.14 
-    sl_test_offset_percent = 0.02  # 2% de Stop Loss
-    tp_test_offset_percent = 0.04  # 4% de Take Profit
+    # Verifica a conexão e o saldo antes de iniciar o monitoramento
+    print("\nVerificando conexão e saldo...")
+    server_time_data = trade_manager.get_server_time()
+    if server_time_data:
+        print(f"Tempo do Servidor Bybit: {datetime.fromtimestamp(int(server_time_data['timeSecond']))}")
+        balance = trade_manager.get_account_balance('USDT')
+        print(f"Saldo da conta (USDT): {balance}")
 
-    current_price = 0
-    sl_price = 0
-    tp_price = 0
-
-    try:
-        server_time_data = trade_manager.get_server_time()
-        if server_time_data and 'timeSecond' in server_time_data:
-            print(f"Tempo do Servidor Bybit: {datetime.fromtimestamp(int(server_time_data['timeSecond']))}")
-        else:
-            print(f"AVISO: Não foi possível obter o tempo do servidor. Resposta: {server_time_data}")
-            
-        balance = trade_manager.get_account_balance('USDT') # Tenta obter saldo em USDT
-        print(f"Saldo disponível na conta (USDT ou geral se USDT não específico): {balance}")
-
-        if balance < 10 and TESTNET_MODE: # Ajuste este valor conforme necessidade
-            print("AVISO: Saldo baixo na testnet. Alguns testes de trade podem não ser executados.")
-            print("       Você pode solicitar fundos na Testnet Bybit via 'Faucet'.")
-
-        current_price = trade_manager.get_latest_price(symbol_test)
-        if current_price > 0:
-            print(f"Último preço de {symbol_test}: {current_price}")
-            # Arredondar para precisão de preço do BTCUSDT (geralmente 1 ou 2 casas decimais)
-            # A precisão pode ser obtida via API (instruments-info), mas para teste, vamos usar 2.
-            sl_price = round(current_price * (1 - sl_test_offset_percent), 2) 
-            tp_price = round(current_price * (1 + tp_test_offset_percent), 2)
-            print(f"SL calculado: {sl_price}, TP calculado: {tp_price}")
-        else:
-            print(f"AVISO: Não foi possível obter o preço atual para {symbol_test}. SL/TP não serão definidos.")
-            # Sair se não conseguir preço para evitar ordens com SL/TP inválidos
-            raise ValueError(f"Preço para {symbol_test} não pôde ser obtido. Abortando testes de trade.")
-
-
-        print(f"\nTentando definir/confirmar alavancagem de {alavancagem_test}x para {symbol_test} (nível de conta para Cross Margin)...")
-        leverage_set_result = trade_manager.set_leverage(symbol_test, alavancagem_test, alavancagem_test)
-        if leverage_set_result is not None: # set_leverage retorna None em falha de _handle_response, ou o 'result'
-            print(f"Chamada para definir alavancagem para {symbol_test} processada.")
-            # Nota: A resposta de sucesso para set_leverage na v5 pode ser vazia ou não muito informativa.
-            # O importante é que não houve erro no _handle_response.
-        else:
-            print(f"AVISO: Problema ao tentar definir alavancagem para {symbol_test}.")
-            print(f"  Lembre-se que sua conta já está configurada para Cruzada {alavancagem_test}x.")
-            print(f"  Se a configuração manual estiver correta, continue com cautela.")
-        
-        # Não há mais chamada para set_margin_mode aqui, pois o usuário já está em Cross.
-
-        if balance > 10 and current_price > 0: # Verifica saldo e se o preço foi obtido
-            print(f"\n--- Iniciando teste de colocação de ordem ---")
-            print(f"Tentando colocar ordem de COMPRA de mercado para {qty_test} {symbol_test}...")
-            
-            order_buy_result = trade_manager.place_market_order(
-                symbol=symbol_test, 
-                side="Buy", 
-                qty=qty_test,
-                market_unit="baseCoin", 
-                stop_loss_price=sl_price, 
-                take_profit_price=tp_price
-            )
-
-            if order_buy_result: 
-                print(f"SUCESSO AO PROCESSAR ORDEM DE COMPRA (API retornou resultado positivo).")
-                print(f"  Detalhes do resultado (ordem): {json.dumps(order_buy_result, indent=2)}")
-                if isinstance(order_buy_result, dict) and order_buy_result.get('orderId'):
-                    print(f"  ID da Ordem: {order_buy_result.get('orderId')}")
-                else:
-                    print("  AVISO: orderId não encontrado no resultado esperado. Verifique a resposta bruta da API.")
-            else:
-                print("FALHA ao colocar ordem de COMPRA. Verifique os logs de erro e DEBUG acima.")
-            
-            time.sleep(3) # Pausa para a ordem ser processada e SL/TP potencialmente criados
-
-            print("\nTentando cancelar todas as ordens abertas (ex: ordens SL/TP)...")
-            cancel_result = trade_manager.cancel_all_orders(symbol_test)
-            if cancel_result is not None: # _handle_response retorna result ou None
-                 print(f"Resultado do cancelamento de ordens: {json.dumps(cancel_result, indent=2)}")
-                 if isinstance(cancel_result, list) and not cancel_result: # Lista vazia pode ser sucesso
-                     print("  Nenhuma ordem aberta para cancelar ou todas foram canceladas com sucesso (lista vazia retornada).")
-                 elif isinstance(cancel_result, dict) and cancel_result.get('list'): # Alguns endpoints retornam dict com list
-                     print(f"  Ordens canceladas: {len(cancel_result['list'])}")
-
-            else:
-                print("  Problema ao cancelar ordens ou _handle_response indicou falha.")
-
-            print("\nVerificando posições abertas...")
-            open_positions = trade_manager.get_open_positions(symbol_test)
-            if open_positions:
-                print(f"Posições abertas para {symbol_test}: {json.dumps(open_positions, indent=2)}")
-            else:
-                print(f"Nenhuma posição aberta para {symbol_test}.")
-        else:
-            if balance <= 10:
-                 print(f"\nAVISO: Saldo insuficiente ({balance} USDT) para testar a colocação de ordem de compra.")
-            if current_price <= 0:
-                 print(f"\nAVISO: Preço atual não obtido, teste de colocação de ordem abortado.")
-
-    except Exception as e:
-        print(f"\nERRO INESPERADO DURANTE OS TESTES GERAIS: {e}")
-        traceback.print_exc()
-
-    print("\n--- Testes básicos da API Bybit concluídos ---")
-
-    # Se o objetivo principal deste script agora é apenas coletar dados para o dashboard:
-    print(f"Iniciando coletor de dados de posições da Bybit para o arquivo: {BYBIT_POSITIONS_JSON_FILE}")
-    print("O script ficará rodando para atualizar o arquivo JSON. Pressione CTRL+C para parar.")
-    trade_manager.run_positions_monitoring_to_json(output_json_file=BYBIT_POSITIONS_JSON_FILE, interval_seconds=7)
-
-    # O código de teste anterior (colocar ordens, etc.) pode ser comentado ou removido
-    # se este script for dedicado apenas à coleta de dados para o dashboard.
-    # Se quiser manter os testes, pode executar o monitoramento JSON após eles ou condicionalmente.
+        # Inicia o loop principal de monitoramento que salva as posições em JSON
+        print(f"\nIniciando coletor de dados de posições da Bybit para o arquivo: {BYBIT_POSITIONS_JSON_FILE}")
+        print("O script ficará rodando para atualizar o arquivo JSON. Pressione CTRL+C para parar.")
+        trade_manager.run_positions_monitoring_to_json(
+            output_json_file=BYBIT_POSITIONS_JSON_FILE,
+            interval_seconds=7
+        )
+    else:
+        print("\nERRO: Não foi possível conectar à API da Bybit. Verifique suas chaves e conexão.")
+        print("O monitoramento de posições não será iniciado.")
 
     print("\n--- SCRIPT BYBIT TRADE MANAGER FINALIZADO (ou interrompido) ---")

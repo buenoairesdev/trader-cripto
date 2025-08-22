@@ -1,0 +1,11 @@
+# This file contains the core dependencies for the trader-cripto project.
+# To install them, run: pip install -r requirements.txt
+
+pandas
+numpy
+matplotlib
+pybit
+backtesting
+dash
+dash-bootstrap-components
+python-dotenv

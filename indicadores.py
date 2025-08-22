@@ -301,6 +301,39 @@ def calcular_sentimento_vader(
     print("Indicador Sentimento VADER calculado.")
     return data
 
+def calcular_atr(data: pd.DataFrame, periodo: int = 14, high_col: str = 'high', low_col: str = 'low', close_col: str = 'close') -> pd.DataFrame:
+    """
+    Calcula o Average True Range (ATR).
+    Usa os nomes de coluna em minúsculo por padrão para ser consistente com os dados da API.
+    """
+    # Garante que as colunas existam, tentando com maiúscula como fallback
+    uc_high_col = high_col.capitalize()
+    uc_low_col = low_col.capitalize()
+    uc_close_col = close_col.capitalize()
+
+    final_high_col = high_col if high_col in data.columns else uc_high_col
+    final_low_col = low_col if low_col in data.columns else uc_low_col
+    final_close_col = close_col if close_col in data.columns else uc_close_col
+
+    if not all(c in data.columns for c in [final_high_col, final_low_col, final_close_col]):
+        raise ValueError(f"DataFrame precisa conter colunas de high, low e close. Verificado: '{high_col}', '{low_col}', '{close_col}' e suas versões capitalizadas.")
+
+    high = data[final_high_col]
+    low = data[final_low_col]
+    close = data[final_close_col]
+
+    # Calcula o True Range (TR)
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+    # Calcula o ATR usando uma Média Móvel Exponencial (EMA)
+    data[f'ATR_{periodo}'] = true_range.ewm(alpha=1/periodo, adjust=False).mean()
+
+    print(f"Indicador ATR({periodo}) calculado.")
+    return data
+
 # --------------------------------------------------------------------------
 # Exemplo de Uso (requer dados em um DataFrame pandas)
 # --------------------------------------------------------------------------
