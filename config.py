@@ -11,6 +11,7 @@
 # True para otimizar os parâmetros definidos em `RANGES_OTIMIZACAO`.
 # False para rodar um único backtest com os parâmetros padrão definidos na estratégia.
 MODO_OTIMIZACAO = True
+USE_DUMMY_DATA = False # Para testes locais com dummy_data.csv
 
 # --- PARÂMETROS GERAIS DE BACKTEST ---
 # Lista de ativos para fazer o backtest. Ex: ["BTCUSDT", "ETHUSDT"]
@@ -37,9 +38,16 @@ MARGIN_PARAM = 0.0476 # Equivalente a ~21x de alavancagem (1 / 0.0476)
 # Este é o principal controle do tamanho da posição.
 EQUITY_FRACTION_PER_TRADE = 0.048
 
+# --- PARÂMETROS DA API BYBIT ---
+# Categoria de trading para a API. 'linear' para futuros USDT, 'spot' para mercado à vista.
+TRADE_CATEGORY = 'linear'
+
 # --- PARÂMETROS FIXOS DOS INDICADORES ---
 # Período para o indicador de Zonas de Compra/Venda.
 ZONAS_PERIODO = 1500
+
+# Período para o cálculo do Average True Range (ATR), usado no Stop Loss dinâmico.
+ATR_PERIODO = 14
 
 # Parâmetros para o indicador VADER.
 VADER_PARAMS = {
@@ -58,7 +66,7 @@ SLOW_MA_TYPE = 'EMA'
 PARAMETROS_PADRAO = {
     'fast_ma_len_otim': 12,
     'slow_ma_len_otim': 26,
-    'multiplicador_sl_atr': 2.0, # Este será implementado na próxima etapa
+    'multiplicador_sl_atr': 2.0,
     'tp_rr_otim': 2.0,
 }
 
@@ -75,7 +83,6 @@ SALVAR_RESULTADOS_OTIMIZADOS_NO_DB = True
 # NOTA: O número de combinações é o produto do tamanho de cada lista/range.
 # Cuidado para não criar um número excessivamente grande de combinações.
 RANGES_OTIMIZACAO = {
-    # 'sl_percent_otim': [0.0075, 0.01, 0.015, 0.02, 0.025, 0.03, 0.035, 0.04, 0.045], # Será substituído por ATR
     'multiplicador_sl_atr': [1.5, 2.0, 2.5, 3.0, 3.5], # Multiplicador para o Stop Loss dinâmico (ATR)
     'tp_rr_otim': [1.0, 1.5, 2.0, 2.5], # Risco/Retorno para o Take Profit
     'fast_ma_len_otim': range(5, 38, 4), # Período da MA rápida
