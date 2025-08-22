@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 
+from logger_config import logger
 # --------------------------------------------------------------------------
 # Funções Auxiliares para Médias Móveis (Replicando a função 'ma' do Pine)
 # --------------------------------------------------------------------------
@@ -44,7 +45,15 @@ def f_RelVol(volume_series: pd.Series, length: int) -> pd.Series:
     # Vamos aplicar diretamente no volume:
     min_vol = volume_series.rolling(window=length, min_periods=1).min()
     max_vol = volume_series.rolling(window=length, min_periods=1).max()
-    rel_vol = 100 * (volume_series - min_vol) / (max_vol - min_vol)
+
+    # Adiciona uma verificação para evitar divisão por zero
+    range_vol = max_vol - min_vol
+    rel_vol = pd.Series(np.nan, index=volume_series.index)
+
+    # Calcula rel_vol apenas onde o range é maior que zero
+    mask = range_vol > 0
+    rel_vol[mask] = 100 * (volume_series[mask] - min_vol[mask]) / range_vol[mask]
+
     # O Pine divide por 100, então:
     return (rel_vol / 100).fillna(0.5) # Preenche NaNs e normaliza entre 0 e 1
 
@@ -149,51 +158,44 @@ def calcular_ondas_alta_baixa(
 def calcular_zonas_compra_venda(
     data: pd.DataFrame,
     periodo: int = 1500,
-    high_col: str = 'high', # <-- NOVO PARÂMETRO (com valor padrão 'high')
-    low_col: str = 'low'    # <-- NOVO PARÂMETRO (com valor padrão 'low')
+    high_col: str = 'high',
+    low_col: str = 'low',
+    close_col: str = 'close'
 ) -> pd.DataFrame:
     """
     Calcula as Zonas de Compra e Venda baseadas nas máximas e mínimas
     de um período e níveis de Fibonacci.
-    Permite especificar os nomes das colunas high/low.
+    Permite especificar os nomes das colunas high/low/close.
     """
-    # Usar os nomes das colunas passados como parâmetro
-    if high_col not in data.columns or low_col not in data.columns:
-        raise ValueError(f"DataFrame precisa conter colunas '{high_col}' e '{low_col}'.")
+    if not all(col in data.columns for col in [high_col, low_col, close_col]):
+        raise ValueError(f"DataFrame precisa conter as colunas '{high_col}', '{low_col}' e '{close_col}'.")
 
-    # Calcula a máxima e mínima do período usando rolling
-    highest_high = data[high_col].rolling(window=periodo, min_periods=1).max() # Usa high_col
-    lowest_low = data[low_col].rolling(window=periodo, min_periods=1).min()   # Usa low_col
+    highest_high = data[high_col].rolling(window=periodo, min_periods=1).max()
+    lowest_low = data[low_col].rolling(window=periodo, min_periods=1).min()
 
-    # Calcula a diferença (range)
     price_range = highest_high - lowest_low
 
-    # Calcula os níveis de Fibonacci
-    data['zcv_0']   = lowest_low
-    data['zcv_236'] = lowest_low + (price_range * 0.236)
-    data['zcv_1000'] = lowest_low + (price_range * 0.382) #renomeei para zcv_1000 para evitar confusão com zcv_100
-    data['zcv_500'] = lowest_low + (price_range * 0.500)
-    data['zcv_618'] = lowest_low + (price_range * 0.618)
-    data['zcv_786'] = lowest_low + (price_range * 0.786)
-    data['zcv_100']  = highest_high #renomeei para zcv_100 para evitar confusão com zcv_100
-
+    # Calcula os níveis de Fibonacci com nomes claros
+    data['zcv_0']   = lowest_low                           # Nível 0%
+    data['zcv_236'] = lowest_low + (price_range * 0.236)   # Nível 23.6%
+    data['zcv_382'] = lowest_low + (price_range * 0.382)   # Nível 38.2%
+    data['zcv_500'] = lowest_low + (price_range * 0.500)   # Nível 50%
+    data['zcv_618'] = lowest_low + (price_range * 0.618)   # Nível 61.8%
+    data['zcv_786'] = lowest_low + (price_range * 0.786)   # Nível 78.6%
+    data['zcv_1000'] = highest_high                         # Nível 100%
 
     # Determinar a Zona Atual com base no preço de fechamento
-    # (A lógica aqui não precisa mudar, assume que 'close' existe ou usamos 'Close'?)
-    # Vamos assumir que a coluna 'Close' (maiúscula) já existe após o rename no backtester
-    close_col = 'Close' if 'Close' in data.columns else 'close' # Verifica qual usar
-
     conditions = [
-        (data[close_col] < data['zcv_236']),
-        (data[close_col] >= data['zcv_236']) & (data[close_col] < data['zcv_1000']), #renomeei para zcv_1000 para evitar confusão com zcv_100
-        (data[close_col] >= data['zcv_1000']) & (data[close_col] < data['zcv_618']), #renomeei para zcv_1000 para evitar confusão com zcv_100
-        (data[close_col] >= data['zcv_618']) & (data[close_col] < data['zcv_786']),
-        (data[close_col] >= data['zcv_786'])
+        (data[close_col] < data['zcv_236']),                                  # Abaixo de 23.6%
+        (data[close_col] >= data['zcv_236']) & (data[close_col] < data['zcv_382']), # Entre 23.6% e 38.2%
+        (data[close_col] >= data['zcv_382']) & (data[close_col] < data['zcv_618']), # Entre 38.2% e 61.8%
+        (data[close_col] >= data['zcv_618']) & (data[close_col] < data['zcv_786']), # Entre 61.8% e 78.6%
+        (data[close_col] >= data['zcv_786'])                                  # Acima de 78.6%
     ]
     zone_names = ['Strong Buy', 'Buy', 'Neutral', 'Sell', 'Strong Sell']
     data['zcv_zona'] = np.select(conditions, zone_names, default='Neutral')
 
-    print("Indicador Zonas de Compra/Venda calculado.")
+    logger.debug("Indicador Zonas de Compra/Venda calculado.")
     return data
 
 # --------------------------------------------------------------------------
@@ -256,13 +258,13 @@ def calcular_sentimento_vader(
     # --- Cálculo de Volume ('vola') ---
     if v_calc == 'None' or volume.isnull().all():
         vola = pd.Series(1.0, index=data.index) # Série de 1s
-        print("VADER: Usando vola=1 (sem aceleração por volume).")
+        logger.debug("VADER: Usando vola=1 (sem aceleração por volume).")
     elif v_calc == 'Relative':
         vola = f_RelVol(volume, vlookbk)
-        print(f"VADER: Usando volume relativo (lookback {vlookbk}).")
+        logger.debug(f"VADER: Usando volume relativo (lookback {vlookbk}).")
     elif v_calc == 'Full':
         vola = volume
-        print("VADER: Usando volume absoluto.")
+        logger.debug("VADER: Usando volume absoluto.")
     else:
         raise ValueError(f"Valor inválido para v_calc: {v_calc}")
     # Preencher NaNs iniciais em vola (importante para divisões depois)
@@ -298,7 +300,7 @@ def calcular_sentimento_vader(
     else:
         data['vader_sentiment'] = np.nan # Coluna com NaN se não calculado
 
-    print("Indicador Sentimento VADER calculado.")
+    logger.debug("Indicador Sentimento VADER calculado.")
     return data
 
 def calcular_atr(data: pd.DataFrame, periodo: int = 14, high_col: str = 'high', low_col: str = 'low', close_col: str = 'close') -> pd.DataFrame:
@@ -331,7 +333,7 @@ def calcular_atr(data: pd.DataFrame, periodo: int = 14, high_col: str = 'high', 
     # Calcula o ATR usando uma Média Móvel Exponencial (EMA)
     data[f'ATR_{periodo}'] = true_range.ewm(alpha=1/periodo, adjust=False).mean()
 
-    print(f"Indicador ATR({periodo}) calculado.")
+    logger.debug(f"Indicador ATR({periodo}) calculado.")
     return data
 
 # --------------------------------------------------------------------------
