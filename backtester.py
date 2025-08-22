@@ -48,6 +48,7 @@ class EstrategiaMultiIndicador(Strategy):
     slow_ma_type_est = config.SLOW_MA_TYPE
     equity_fraction_per_trade = config.EQUITY_FRACTION_PER_TRADE
     asset_name_param = "N/A_Asset"  # Nome do ativo (passado como parâmetro em tempo de execução)
+    max_workers = None  # Parâmetro dummy exigido pela biblioteca ao passar 'max_workers' para otimização
 
     def init(self):
         """
