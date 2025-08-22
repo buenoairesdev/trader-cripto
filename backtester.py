@@ -15,7 +15,7 @@ from logger_config import logger
 
 # Tenta importar o gerenciador de banco de dados
 try:
-    from database_manager import registrar_execucao, registrar_resultados_ativos
+    from database_manager import create_tables, registrar_execucao, registrar_resultados_ativos
     DB_MANAGER_AVAILABLE = True
 except ImportError:
     DB_MANAGER_AVAILABLE = False
@@ -178,45 +178,60 @@ def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
     bt = Backtest(df, EstrategiaMultiIndicador, cash=config.INITIAL_CASH, commission=config.COMMISSION_RATE, margin=config.MARGIN_PARAM, trade_on_close=True, exclusive_orders=True)
     params_para_rodada = {'asset_name_param': coin}
 
+    stats = None
+    params_usados = {}
+
     if config.MODO_OTIMIZACAO:
         logger.info(f"Rodando OTIMIZAÇÃO para {coin} | Alvo: {config.METRICA_OTIMIZACAO}...")
         valid_otim_params = {k: v for k, v in config.RANGES_OTIMIZACAO.items() if hasattr(EstrategiaMultiIndicador, k)}
         workers = config.MAX_WORKERS_OTIMIZACAO if config.MAX_WORKERS_OTIMIZACAO != -1 else os.cpu_count()
         logger.info(f"Otimização com max_workers={workers}")
 
-        stats = bt.optimize(
+        stats_otimizacao = bt.optimize(
             maximize=config.METRICA_OTIMIZACAO, return_heatmap=False,
             constraint=lambda p: p.fast_ma_len_otim < p.slow_ma_len_otim if hasattr(p, 'fast_ma_len_otim') and hasattr(p, 'slow_ma_len_otim') else True,
             max_workers=workers, **valid_otim_params, **params_para_rodada
         )
         logger.info(f"Otimização para {coin} concluída.")
-        if hasattr(stats, '_strategy'):
-            melhores_params = {k: getattr(stats._strategy, k, None) for k in valid_otim_params.keys()}
-            logger.info("Rodando backtest final com parâmetros otimizados...")
-            final_stats = bt.run(**melhores_params, **params_para_rodada)
 
-            param_parts = [f"{k.replace('_otim','').upper()} {v:.2f}" if isinstance(v, float) else f"{k.replace('_otim','').upper()} {v}" for k, v in melhores_params.items()]
-            params_str = ', '.join(param_parts)
-            final_stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}): {params_str}"
-            final_stats['Otimizado'] = True
-            return final_stats.to_dict(), melhores_params
+        if hasattr(stats_otimizacao, '_strategy'):
+            params_usados = {k: getattr(stats_otimizacao._strategy, k, None) for k in valid_otim_params.keys()}
+            logger.info("Rodando backtest final com parâmetros otimizados...")
+            stats = bt.run(**params_usados, **params_para_rodada) # stats agora são do backtest final
+            param_parts = [f"{k.replace('_otim','').upper()} {v:.2f}" if isinstance(v, float) else f"{k.replace('_otim','').upper()} {v}" for k, v in params_usados.items()]
+            stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}): {', '.join(param_parts)}"
+            stats['Otimizado'] = True
         else:
+            stats = stats_otimizacao # Se otimização falhou, usa as stats dela
             stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}) - Falha"
             stats['Otimizado'] = True
-            return stats.to_dict(), {}
-    else:
-        logger.info(f"Rodando backtest PADRÃO para {coin}...")
-        run_params = {**config.PARAMETROS_PADRAO, **params_para_rodada}
-        stats = bt.run(**run_params)
 
-        param_parts = [f"{k.replace('_otim','').upper()} {v:.2f}" if isinstance(v, float) else f"{k.replace('_otim','').upper()} {v}" for k, v in config.PARAMETROS_PADRAO.items()]
-        params_str = ', '.join(param_parts)
-        stats['Descricao_Estrategia'] = f"Run Normal: {params_str}"
+    else: # Modo Backtest Padrão
+        logger.info(f"Rodando backtest PADRÃO para {coin}...")
+        params_usados = config.PARAMETROS_PADRAO
+        stats = bt.run(**params_usados, **params_para_rodada)
+        param_parts = [f"{k.replace('_otim','').upper()} {v:.2f}" if isinstance(v, float) else f"{k.replace('_otim','').upper()} {v}" for k, v in params_usados.items()]
+        stats['Descricao_Estrategia'] = f"Run Normal: {', '.join(param_parts)}"
         stats['Otimizado'] = False
-        return stats.to_dict(), config.PARAMETROS_PADRAO
+
+    # --- Processamento e retorno unificado ---
+    if stats is not None:
+        stats_dict = stats.to_dict()
+        # Adiciona os dados de séries temporais ao dicionário para salvar no DB
+        if hasattr(stats, '_equity_curve') and not stats['_equity_curve'].empty:
+            stats_dict['EquityCurve_JSON'] = stats['_equity_curve'].to_json(orient='split', date_format='iso')
+        if hasattr(stats, '_trades') and not stats['_trades'].empty:
+            stats_dict['Trades_JSON'] = stats['_trades'].to_json(orient='split', date_format='iso')
+
+        return stats_dict, params_usados
+    else:
+        return {}, {}
 
 def main():
     """Função principal que orquestra todo o processo de backtesting."""
+    if DB_MANAGER_AVAILABLE:
+        create_tables()  # Garante que o DB e as tabelas existam antes de qualquer operação.
+
     start_time = datetime.now()
     end_date_dt = datetime.now(timezone.utc)
     start_date_dt = end_date_dt - timedelta(days=config.DIAS_HISTORICO)
@@ -247,13 +262,19 @@ def main():
                 params_db = {
                     'timeframe': config.TIMEFRAME, 'dias_historico': config.DIAS_HISTORICO,
                     'lista_ativos': json.dumps(config.COINS),
-                    'fast_ma_type': config.FAST_MA_TYPE, 'slow_ma_type': config.SLOW_MA_TYPE,
-                    'zonas_periodo': config.ZONAS_PERIODO, 'vader_params': json.dumps(config.VADER_PARAMS),
+                    'fast_ma_type': config.FAST_MA_TYPE,
+                    'slow_ma_type': config.SLOW_MA_TYPE,
+                    'fast_ma_length': int(first_coin_params.get('fast_ma_len_otim', 0)),
+                    'slow_ma_length': int(first_coin_params.get('slow_ma_len_otim', 0)),
+                    'zonas_periodo': config.ZONAS_PERIODO,
+                    'vader_params': json.dumps(config.VADER_PARAMS),
                     'sl_percent': float(first_coin_params.get('multiplicador_sl_atr', 0)),
                     'tp_rr': float(first_coin_params.get('tp_rr_otim', 0)),
                     'equity_fraction_per_trade': config.EQUITY_FRACTION_PER_TRADE,
-                    'initial_cash': config.INITIAL_CASH, 'commission_rate': config.COMMISSION_RATE,
-                    'margin': config.MARGIN_PARAM, 'descricao': f"Otim: {config.MODO_OTIMIZACAO}, Alvo: {config.METRICA_OTIMIZACAO if config.MODO_OTIMIZACAO else 'N/A'}"
+                    'initial_cash': config.INITIAL_CASH,
+                    'commission_rate': config.COMMISSION_RATE,
+                    'margin': config.MARGIN_PARAM,
+                    'descricao': f"Otim: {config.MODO_OTIMIZACAO}, Alvo: {config.METRICA_OTIMIZACAO if config.MODO_OTIMIZACAO else 'N/A'}"
                 }
                 id_execucao = registrar_execucao(params_db)
                 if id_execucao:

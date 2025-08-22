@@ -1,6 +1,7 @@
 # database_manager.py
 import sqlite3
 from datetime import datetime
+from logger_config import logger
 import json
 import pandas as pd
 import os # <--- IMPORTAR O MÓDULO OS
@@ -89,13 +90,32 @@ def create_tables():
             SQN REAL,
             _strategy TEXT,
             Foi_Otimizado BOOLEAN DEFAULT FALSE, 
-            Estrategia_Descricao TEXT,              
+            Estrategia_Descricao TEXT,
+            EquityCurve_JSON TEXT,
+            Trades_JSON TEXT,
             FOREIGN KEY (id_execucao) REFERENCES Execucoes (id_execucao)
         )
     ''')
+
+    # --- Lógica de Migração de Esquema ---
+    # Adiciona as colunas JSON se elas não existirem, para compatibilidade com DBs antigos.
+    try:
+        cursor.execute("ALTER TABLE Resultados_Ativos ADD COLUMN EquityCurve_JSON TEXT")
+        logger.info("Coluna 'EquityCurve_JSON' adicionada à tabela 'Resultados_Ativos'.")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e).lower():
+            raise # Levanta o erro se for algo diferente de "coluna duplicada"
+
+    try:
+        cursor.execute("ALTER TABLE Resultados_Ativos ADD COLUMN Trades_JSON TEXT")
+        logger.info("Coluna 'Trades_JSON' adicionada à tabela 'Resultados_Ativos'.")
+    except sqlite3.OperationalError as e:
+        if "duplicate column name" not in str(e).lower():
+            raise
+
     conn.commit()
     conn.close()
-    print(f"Banco de dados '{DATABASE_NAME}' e tabelas verificados/criados.")
+    logger.info(f"Banco de dados '{DATABASE_NAME}' e tabelas verificados/criados/atualizados.")
 
 # ... (resto do arquivo database_manager.py como estava antes,
 # incluindo registrar_execucao e registrar_resultados_ativos,
