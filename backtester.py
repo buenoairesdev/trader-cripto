@@ -281,7 +281,16 @@ def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
             melhores_params = {k: getattr(stats._strategy, k, None) for k in valid_otim_params.keys()}
             print("Rodando backtest final com parâmetros otimizados...")
             stats = bt.run(**melhores_params, **params_para_rodada)
-            stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}): {', '.join([f'{k.replace('_otim','').upper()} {v:.2f}' for k, v in melhores_params.items()])}"
+
+            # Corrige o SyntaxError com f-string aninhada
+            param_parts = []
+            for k, v in melhores_params.items():
+                if isinstance(v, float):
+                    param_parts.append(f"{k.replace('_otim','').upper()} {v:.2f}")
+                else:
+                    param_parts.append(f"{k.replace('_otim','').upper()} {v}")
+            params_str = ', '.join(param_parts)
+            stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}): {params_str}"
         else:
             stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}) - Falha"
 
@@ -292,7 +301,17 @@ def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
         print(f"Rodando backtest PADRÃO para {coin}...")
         run_params = {**config.PARAMETROS_PADRAO, **params_para_rodada}
         stats = bt.run(**run_params)
-        stats['Descricao_Estrategia'] = f"Run Normal: {', '.join([f'{k.replace('_otim','').upper()} {v:.2f}' for k, v in config.PARAMETROS_PADRAO.items()])}"
+
+        # Corrige o SyntaxError com f-string aninhada
+        param_parts = []
+        for k, v in config.PARAMETROS_PADRAO.items():
+            if isinstance(v, float):
+                param_parts.append(f"{k.replace('_otim','').upper()} {v:.2f}")
+            else:
+                param_parts.append(f"{k.replace('_otim','').upper()} {v}")
+        params_str = ', '.join(param_parts)
+        stats['Descricao_Estrategia'] = f"Run Normal: {params_str}"
+
         stats['Otimizado'] = False
         return stats.to_dict(), config.PARAMETROS_PADRAO
 
