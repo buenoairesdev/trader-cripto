@@ -268,7 +268,7 @@ def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
         workers = config.MAX_WORKERS_OTIMIZACAO if config.MAX_WORKERS_OTIMIZACAO != -1 else os.cpu_count()
         print(f"Otimização com max_workers={workers}")
 
-        stats, _ = bt.optimize(
+        stats = bt.optimize(
             maximize=config.METRICA_OTIMIZACAO,
             return_heatmap=False,
             constraint=lambda p: p.fast_ma_len_otim < p.slow_ma_len_otim if hasattr(p, 'fast_ma_len_otim') and hasattr(p, 'slow_ma_len_otim') else True,
@@ -281,7 +281,7 @@ def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
         if hasattr(stats, '_strategy'):
             melhores_params = {k: getattr(stats._strategy, k, None) for k in valid_otim_params.keys()}
             print("Rodando backtest final com parâmetros otimizados...")
-            stats = bt.run(**melhores_params, **params_para_rodada)
+            final_stats = bt.run(**melhores_params, **params_para_rodada)
 
             # Corrige o SyntaxError com f-string aninhada
             param_parts = []
@@ -291,12 +291,14 @@ def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
                 else:
                     param_parts.append(f"{k.replace('_otim','').upper()} {v}")
             params_str = ', '.join(param_parts)
-            stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}): {params_str}"
+            final_stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}): {params_str}"
+            final_stats['Otimizado'] = True
+            return final_stats.to_dict(), melhores_params
         else:
+            # Se a otimização falhar ou não encontrar estratégia, retorna as stats da otimização
             stats['Descricao_Estrategia'] = f"Otim ({config.METRICA_OTIMIZACAO[:4]}) - Falha"
-
-        stats['Otimizado'] = True
-        return stats.to_dict(), melhores_params
+            stats['Otimizado'] = True
+            return stats.to_dict(), {}
 
     else: # Modo Backtest Padrão
         print(f"Rodando backtest PADRÃO para {coin}...")
