@@ -37,9 +37,16 @@ MARGIN_PARAM = 0.0476 # Equivalente a ~21x de alavancagem (1 / 0.0476)
 # Este é o principal controle do tamanho da posição.
 EQUITY_FRACTION_PER_TRADE = 0.048
 
+# --- PARÂMETROS DA API BYBIT ---
+# Categoria de trading para a API. 'linear' para futuros USDT, 'spot' para mercado à vista.
+TRADE_CATEGORY = 'linear'
+
 # --- PARÂMETROS FIXOS DOS INDICADORES ---
 # Período para o indicador de Zonas de Compra/Venda.
 ZONAS_PERIODO = 1500
+
+# Período para o cálculo do Average True Range (ATR), usado no Stop Loss dinâmico.
+ATR_PERIODO = 14
 
 # Parâmetros para o indicador VADER.
 VADER_PARAMS = {
