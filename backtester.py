@@ -10,7 +10,8 @@ import os
 import config
 from bybit_data import fetch_bybit_kline
 from indicadores import (calcular_atr, calcular_sentimento_vader,
-                         calcular_zonas_compra_venda, ema, hma, sma, wma)
+                         calcular_zonas_compra_venda, ema, hma, sma, wma, calcular_indicadores_talib)
+from sentiment_data import fetch_fear_and_greed_index
 from logger_config import logger
 
 # Tenta importar o gerenciador de banco de dados
@@ -154,16 +155,23 @@ def prepare_data_for_asset(coin: str, start_date: datetime, end_date: datetime) 
     df_bt = df_raw.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'})
     df_bt.index = pd.to_datetime(df_bt.index)
 
+    # Buscar e mesclar dados de sentimento (Fear & Greed)
+    fng_data = fetch_fear_and_greed_index(limit=config.DIAS_HISTORICO + 5) # +5 dias de margem
+    if not fng_data.empty:
+        df_bt = pd.merge_asof(df_bt.sort_index(), fng_data.sort_index(), left_index=True, right_index=True, direction='backward')
+        df_bt[['fng_value', 'fng_classification']] = df_bt[['fng_value', 'fng_classification']].ffill()
+
     logger.info(f"Calculando indicadores para {coin}...")
     df_bt = calcular_zonas_compra_venda(df_bt, high_col='High', low_col='Low', close_col='Close', periodo=config.ZONAS_PERIODO)
     df_bt = calcular_sentimento_vader(df_bt, price_col='Close', vol_col='Volume', high_col='High', low_col='Low', **config.VADER_PARAMS)
     df_bt = calcular_atr(df_bt, periodo=config.ATR_PERIODO, high_col='High', low_col='Low', close_col='Close')
+    df_bt = calcular_indicadores_talib(df_bt)
 
     zonas_map = {'Strong Buy': 2, 'Buy': 1, 'Neutral': 0, 'Sell': -1, 'Strong Sell': -2}
     df_bt['ZCV_Zona_Num_Map'] = df_bt['zcv_zona'].map(zonas_map).fillna(0)
     df_bt.rename(columns={'ZCV_Zona_Num_Map': 'ZCV_Zona_Num_I', 'vader_signal': 'VADER_Signal_I', f'ATR_{config.ATR_PERIODO}': 'ATR_I'}, inplace=True)
 
-    colunas_essenciais = ['Open', 'High', 'Low', 'Close', 'Volume', 'ZCV_Zona_Num_I', 'VADER_Signal_I', 'ATR_I']
+    colunas_essenciais = ['Open', 'High', 'Low', 'Close', 'Volume', 'ZCV_Zona_Num_I', 'VADER_Signal_I', 'ATR_I', 'fng_value']
     df_bt.dropna(subset=colunas_essenciais, inplace=True)
 
     if df_bt.empty:

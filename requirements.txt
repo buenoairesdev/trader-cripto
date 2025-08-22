@@ -2,10 +2,11 @@
 # To install them, run: pip install -r requirements.txt
 
 pandas
-numpy
+numpy==2.3.2
 matplotlib
 pybit
 backtesting
 dash
 dash-bootstrap-components
 python-dotenv
+TA-Lib==0.6.5

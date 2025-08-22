@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import talib
 
 from logger_config import logger
 # --------------------------------------------------------------------------
@@ -335,6 +336,41 @@ def calcular_atr(data: pd.DataFrame, periodo: int = 14, high_col: str = 'high', 
 
     logger.debug(f"Indicador ATR({periodo}) calculado.")
     return data
+
+
+def calcular_indicadores_talib(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Calcula indicadores técnicos usando a biblioteca TA-Lib.
+
+    Args:
+        data (pd.DataFrame): DataFrame com colunas 'high', 'low', 'close', 'volume'.
+
+    Returns:
+        pd.DataFrame: DataFrame original com colunas dos indicadores adicionadas.
+    """
+    high = data['High'].values
+    low = data['Low'].values
+    close = data['Close'].values
+    volume = data['Volume'].values
+
+    # RSI
+    data['RSI'] = talib.RSI(close)
+
+    # MACD
+    macd, macdsignal, macdhist = talib.MACD(close, fastperiod=12, slowperiod=26, signalperiod=9)
+    data['MACD'] = macd
+    data['MACD_signal'] = macdsignal
+    data['MACD_hist'] = macdhist
+
+    # Bollinger Bands
+    upper, middle, lower = talib.BBANDS(close, timeperiod=20)
+    data['BB_upper'] = upper
+    data['BB_middle'] = middle
+    data['BB_lower'] = lower
+
+    logger.debug("Indicadores TA-Lib (RSI, MACD, BBands) calculados.")
+    return data
+
 
 # --------------------------------------------------------------------------
 # Exemplo de Uso (requer dados em um DataFrame pandas)

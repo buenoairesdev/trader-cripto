@@ -12,3 +12,8 @@ __pycache__/
 
 # VSCode configs
 .vscode/
+
+# Ignorar diretório de compilação da TA-Lib
+ta-lib/
+ta-lib-*.tar.gz
+ta-lib-install/
