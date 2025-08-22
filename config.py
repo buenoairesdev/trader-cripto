@@ -18,7 +18,7 @@ USE_DUMMY_DATA = False # Para testes locais com dummy_data.csv
 COINS = ["HYPEUSDT", "TRUMPUSDT", "ENAUSDT", "ONDOUSDT", "1000BONKUSDT", "1000PEPEUSDT"]
 
 # Timeframe em minutos. Ex: '1', '3', '5', '15', '60' (para 1h), 'D' (para diário)
-TIMEFRAME = '1'
+TIMEFRAME = '5'
 
 # Número de dias de histórico para buscar para o backtest.
 DIAS_HISTORICO = 30
