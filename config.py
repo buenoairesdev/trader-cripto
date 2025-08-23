@@ -56,7 +56,7 @@ VADER_PARAMS = {
 }
 
 # --- FILTROS AVANÇADOS DA ESTRATÉGIA ---
-USAR_FILTRO_REGIME_MERCADO = True  # True para usar o filtro de tendência de longo prazo (ex: EMA 200 Diária)
+USAR_FILTRO_REGIME_MERCADO = False  # True para usar o filtro de tendência de longo prazo (ex: EMA 200 Diária)
 USAR_FILTRO_STOCH_RSI = True       # True para usar o filtro de confirmação do StochRSI
 
 # Parâmetros para o Filtro de Regime de Mercado

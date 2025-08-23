@@ -43,122 +43,125 @@ class EstrategiaMultiIndicador(Strategy):
 
     def init(self):
         """
-        Inicializa a estratégia: calcula MAs e prepara séries de sinais.
+        Inicializa a estratégia, pré-calculando todas as condições e séries de dados.
+        A lógica de entrada foi movida para o método `next` para maior flexibilidade.
         """
         # Garante que os dados sejam Series do Pandas para operações vetoriais
         close_series = pd.Series(self.data.Close, index=self.data.index)
 
-        # --- Cálculo das Médias Móveis (Ondas) ---
+        # --- Indicadores Principais ---
         ma_functions = {'SMA': sma, 'EMA': ema, 'WMA': wma, 'HMA': hma}
-        try:
-            func_ma_rapida = ma_functions[self.fast_ma_type_est]
-            func_ma_lenta = ma_functions[self.slow_ma_type_est]
-        except KeyError:
-            raise ValueError(f"Tipo de MA inválido: Rápida ('{self.fast_ma_type_est}'), Lenta ('{self.slow_ma_type_est}')")
-
+        func_ma_rapida = ma_functions[self.fast_ma_type_est]
+        func_ma_lenta = ma_functions[self.slow_ma_type_est]
         fast_len = int(self.fast_ma_len_otim)
         slow_len = int(self.slow_ma_len_otim)
         ma_rapida_series = func_ma_rapida(close_series, fast_len)
         ma_lenta_series = func_ma_lenta(close_series, slow_len)
 
-        sinal_compra_mm_series = (ma_rapida_series > ma_lenta_series) & (ma_rapida_series.shift(1) <= ma_lenta_series.shift(1))
-        sinal_venda_mm_series = (ma_rapida_series < ma_lenta_series) & (ma_rapida_series.shift(1) >= ma_lenta_series.shift(1))
+        # --- MODO DE OPERAÇÃO (TENDÊNCIA DAS MAs) ---
+        # Define o "modo" geral: 1 para compra, -1 para venda.
+        self.modo_operacao = pd.Series(np.nan, index=self.data.index)
+        self.modo_operacao[ma_rapida_series > ma_lenta_series] = 1
+        self.modo_operacao[ma_rapida_series < ma_lenta_series] = -1
+        self.modo_operacao = self.modo_operacao.ffill().fillna(0)
 
-        # --- Condições de base dos indicadores ---
-        cond_ondas_compra = sinal_compra_mm_series == True
-        cond_zonas_compra = pd.Series(self.data.ZCV_Zona_Num_I, index=self.data.index).isin([1, 2])
-        cond_vader_positivo = self.data.VADER_Signal_I > 0
-        cond_vader_cruzou_zero_up = (self.data.VADER_Signal_I > 0) & (pd.Series(self.data.VADER_Signal_I, index=self.data.index).shift(1) <= 0)
+        # --- PRÉ-CÁLCULO DE TODAS AS CONDIÇÕES DE FILTRO ---
+        # Pré-calcula as condições de gatilho para acesso rápido no `next`.
+        self.cond_zonas_compra = pd.Series(self.data.ZCV_Zona_Num_I, index=self.data.index).isin([1, 2])
+        self.cond_zonas_venda = pd.Series(self.data.ZCV_Zona_Num_I, index=self.data.index).isin([-1, -2])
 
-        cond_ondas_venda = sinal_venda_mm_series == True
-        cond_zonas_venda = pd.Series(self.data.ZCV_Zona_Num_I, index=self.data.index).isin([-1, -2])
-        cond_vader_negativo = self.data.VADER_Signal_I < 0
-        cond_vader_cruzou_zero_down = (self.data.VADER_Signal_I < 0) & (pd.Series(self.data.VADER_Signal_I, index=self.data.index).shift(1) >= 0)
+        self.cond_vader_positivo = pd.Series(self.data.VADER_Signal_I, index=self.data.index) > 0
+        self.cond_vader_negativo = pd.Series(self.data.VADER_Signal_I, index=self.data.index) < 0
 
-        # --- FILTROS AVANÇADOS (CONFIGURÁVEIS) ---
         # Filtro de Regime de Mercado
         if config.USAR_FILTRO_REGIME_MERCADO:
             regime_ma = pd.Series(self.data.Regime_MA, index=self.data.index)
-            cond_tendencia_alta = (close_series > regime_ma) | regime_ma.isna()
-            cond_tendencia_baixa = (close_series < regime_ma) | regime_ma.isna()
+            self.cond_tendencia_alta = (close_series > regime_ma) | regime_ma.isna()
+            self.cond_tendencia_baixa = (close_series < regime_ma) | regime_ma.isna()
         else:
-            cond_tendencia_alta = cond_tendencia_baixa = pd.Series(True, index=self.data.index)
+            self.cond_tendencia_alta = self.cond_tendencia_baixa = pd.Series(True, index=self.data.index)
 
-        # Filtro de Confirmação (Stochastic RSI)
+        # Filtro Stochastic RSI
         if config.USAR_FILTRO_STOCH_RSI:
             stoch_k = pd.Series(self.data.StochRSI_K, index=self.data.index)
             stoch_d = pd.Series(self.data.StochRSI_D, index=self.data.index)
             params = config.STOCH_RSI_FILTER_PARAMS
-            # Lógica de ESTADO (mais permissiva) em vez de CRUZAMENTO
-            # Compra: K > D (momentum de alta) E K < limite (não sobrecomprado)
-            cond_stoch_compra = (stoch_k > stoch_d) & (stoch_k < params['limite_compra'])
-            # Venda: K < D (momentum de baixa) E K > limite (não sobrevendido)
-            cond_stoch_venda = (stoch_k < stoch_d) & (stoch_k > params['limite_venda'])
-            # Ignora o filtro se o indicador não estiver disponível
-            cond_stoch_compra = cond_stoch_compra | stoch_k.isna()
-            cond_stoch_venda = cond_stoch_venda | stoch_k.isna()
+            self.cond_stoch_compra = (stoch_k > stoch_d) & (stoch_k < params['limite_compra'])
+            self.cond_stoch_venda = (stoch_k < stoch_d) & (stoch_k > params['limite_venda'])
+            self.cond_stoch_compra = self.cond_stoch_compra | stoch_k.isna()
+            self.cond_stoch_venda = self.cond_stoch_venda | stoch_k.isna()
         else:
-            cond_stoch_compra = cond_stoch_venda = pd.Series(True, index=self.data.index)
-
-        # --- Lógica de Entrada Final com os Novos Filtros ---
-        self.compra_a_series = (cond_ondas_compra & cond_zonas_compra & cond_vader_positivo & cond_tendencia_alta & cond_stoch_compra).fillna(False)
-        self.venda_a_series = (cond_ondas_venda & cond_zonas_venda & cond_vader_negativo & cond_tendencia_baixa & cond_stoch_venda).fillna(False)
-        self.compra_b_series = (cond_ondas_compra & cond_zonas_compra & cond_vader_cruzou_zero_up & cond_tendencia_alta & cond_stoch_compra).fillna(False)
-        self.venda_b_series = (cond_ondas_venda & cond_zonas_venda & cond_vader_cruzou_zero_down & cond_tendencia_baixa & cond_stoch_venda).fillna(False)
-
-        self.sl_multiplicador_final = float(self.multiplicador_sl_atr)
-        self.tp_rr_final = float(self.tp_rr_otim)
+            self.cond_stoch_compra = self.cond_stoch_venda = pd.Series(True, index=self.data.index)
 
         # --- Atributos para o método next() ---
-        self.sinal_compra_mm_series = sinal_compra_mm_series
-        self.sinal_venda_mm_series = sinal_venda_mm_series
+        self.sl_multiplicador_final = float(self.multiplicador_sl_atr)
+        self.tp_rr_final = float(self.tp_rr_otim)
         self.atr_series_pd = pd.Series(self.data.ATR_I, index=self.data.index)
+
+        # Guardar o modo do candle anterior para detectar mudanças
+        self.modo_anterior = self.modo_operacao.shift(1).fillna(0)
 
     def next(self):
         """
-        Método chamado para cada vela de dados. Verifica os sinais e executa ordens.
+        Lógica de execução a cada candle. Separa a definição de MODO da de GATILHO.
         """
         current_time_idx = self.data.index[-1]
+        preco_entrada = self.data.Close[-1]
 
+        # --- LÓGICA DE SAÍDA ---
+        # Sai da posição se o modo de operação virar contra a posição
         if self.position:
-            if self.position.is_long and self.sinal_venda_mm_series[current_time_idx]:
+            if self.position.is_long and self.modo_operacao[current_time_idx] == -1:
                 self.position.close()
                 return
-            elif self.position.is_short and self.sinal_compra_mm_series[current_time_idx]:
+            elif self.position.is_short and self.modo_operacao[current_time_idx] == 1:
                 self.position.close()
                 return
 
+        # --- LÓGICA DE ENTRADA ---
+        # Só tenta abrir posição se não tiver uma
         if not self.position:
-            try:
-                sinal_compra_a_atual = self.compra_a_series[current_time_idx]
-                sinal_venda_a_atual = self.venda_a_series[current_time_idx]
-                sinal_compra_b_atual = self.compra_b_series[current_time_idx]
-                sinal_venda_b_atual = self.venda_b_series[current_time_idx]
-            except KeyError:
-                return
+            # Verifica se o modo mudou de neutro/contrário para um modo de operação
+            # Ex: modo anterior era -1 (venda) e agora é 1 (compra)
+            mudou_para_compra = self.modo_operacao[current_time_idx] == 1 and self.modo_anterior[current_time_idx] != 1
+            mudou_para_venda = self.modo_operacao[current_time_idx] == -1 and self.modo_anterior[current_time_idx] != -1
 
-            entrada_compra = sinal_compra_a_atual or sinal_compra_b_atual
-            entrada_venda = sinal_venda_a_atual or sinal_venda_b_atual
-
-            if entrada_compra or entrada_venda:
-                preco_entrada = self.data.Close[-1]
-                size_to_use = self.equity_fraction_per_trade
-                distancia_sl = self.atr_series_pd[current_time_idx] * self.sl_multiplicador_final
-
-                if entrada_compra:
+            # A partir do momento que o modo vira, procuramos o primeiro gatilho válido
+            # Se o modo for de COMPRA, checa os gatilhos de COMPRA
+            if self.modo_operacao[current_time_idx] == 1:
+                # Combina os gatilhos de confirmação
+                gatilho_final_compra = (
+                    self.cond_zonas_compra[current_time_idx] and
+                    self.cond_vader_positivo[current_time_idx] and
+                    self.cond_tendencia_alta[current_time_idx] and
+                    self.cond_stoch_compra[current_time_idx]
+                )
+                if gatilho_final_compra:
+                    distancia_sl = self.atr_series_pd[current_time_idx] * self.sl_multiplicador_final
                     sl_price = preco_entrada - distancia_sl
                     tp_price = preco_entrada + (distancia_sl * self.tp_rr_final)
                     try:
-                        self.buy(size=size_to_use, sl=sl_price, tp=tp_price)
-                    except Exception as e_buy:
-                        logger.warning(f"BUY Falhou [{self.asset_name_param}]@{current_time_idx}: {e_buy}")
-                elif entrada_venda:
+                        self.buy(size=self.equity_fraction_per_trade, sl=sl_price, tp=tp_price)
+                    except Exception as e:
+                        logger.warning(f"BUY Falhou [{self.asset_name_param}]@{current_time_idx}: {e}")
+
+            # Se o modo for de VENDA, checa os gatilhos de VENDA
+            elif self.modo_operacao[current_time_idx] == -1:
+                # Combina os gatilhos de confirmação
+                gatilho_final_venda = (
+                    self.cond_zonas_venda[current_time_idx] and
+                    self.cond_vader_negativo[current_time_idx] and
+                    self.cond_tendencia_baixa[current_time_idx] and
+                    self.cond_stoch_venda[current_time_idx]
+                )
+                if gatilho_final_venda:
+                    distancia_sl = self.atr_series_pd[current_time_idx] * self.sl_multiplicador_final
                     sl_price = preco_entrada + distancia_sl
                     tp_price = preco_entrada - (distancia_sl * self.tp_rr_final)
                     try:
-                        self.sell(size=size_to_use, sl=sl_price, tp=tp_price)
-                    except Exception as e_sell:
-                        logger.warning(f"SELL Falhou [{self.asset_name_param}]@{current_time_idx}: {e_sell}")
+                        self.sell(size=self.equity_fraction_per_trade, sl=sl_price, tp=tp_price)
+                    except Exception as e:
+                        logger.warning(f"SELL Falhou [{self.asset_name_param}]@{current_time_idx}: {e}")
 
 # --------------------------------------------------
 # Funções Auxiliares de Execução
