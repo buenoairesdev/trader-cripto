@@ -189,10 +189,10 @@ def prepare_data_for_asset(coin: str, start_date: datetime, end_date: datetime) 
     if config.USAR_FILTRO_REGIME_MERCADO:
         params = config.REGIME_FILTER_PARAMS
         logger.info(f"Buscando dados {params['timeframe']} para o filtro de tendência para {coin}...")
-        start_date_regime_dt = end_date_dt - timedelta(days=config.DIAS_HISTORICO + 250)
+        start_date_regime_dt = end_date - timedelta(days=config.DIAS_HISTORICO + 250)
         df_regime = fetch_bybit_kline(
             symbol=coin, interval=params['timeframe'],
-            start_time_dt=start_date_regime_dt, end_time_dt=end_date_dt, category='linear'
+            start_time_dt=start_date_regime_dt, end_time_dt=end_date, category='linear'
         )
         ma_periodo = params['ma_periodo']
         if not df_regime.empty and len(df_regime) >= ma_periodo:
