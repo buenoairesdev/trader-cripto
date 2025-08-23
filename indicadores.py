@@ -338,12 +338,13 @@ def calcular_atr(data: pd.DataFrame, periodo: int = 14, high_col: str = 'high', 
     return data
 
 
-def calcular_indicadores_talib(data: pd.DataFrame) -> pd.DataFrame:
+def calcular_indicadores_talib(data: pd.DataFrame, stoch_rsi_params: dict = None) -> pd.DataFrame:
     """
     Calcula indicadores técnicos usando a biblioteca TA-Lib.
 
     Args:
         data (pd.DataFrame): DataFrame com colunas 'high', 'low', 'close', 'volume'.
+        stoch_rsi_params (dict, optional): Parâmetros para o StochRSI. Se None, não é calculado.
 
     Returns:
         pd.DataFrame: DataFrame original com colunas dos indicadores adicionadas.
@@ -368,7 +369,22 @@ def calcular_indicadores_talib(data: pd.DataFrame) -> pd.DataFrame:
     data['BB_middle'] = middle
     data['BB_lower'] = lower
 
-    logger.debug("Indicadores TA-Lib (RSI, MACD, BBands) calculados.")
+    log_msg_parts = ["RSI", "MACD", "BBands"]
+
+    # Stochastic RSI (condicional)
+    if stoch_rsi_params:
+        fastk, fastd = talib.STOCHRSI(
+            close,
+            timeperiod=stoch_rsi_params.get('periodo_rsi', 14),
+            fastk_period=stoch_rsi_params.get('periodo_stoch', 14),
+            fastd_period=stoch_rsi_params.get('periodo_d', 3),
+            fastd_matype=0  # SMA
+        )
+        data['StochRSI_K'] = fastk
+        data['StochRSI_D'] = fastd
+        log_msg_parts.append("StochRSI")
+
+    logger.debug(f"Indicadores TA-Lib ({', '.join(log_msg_parts)}) calculados.")
     return data
 
 

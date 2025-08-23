@@ -45,11 +45,10 @@ class EstrategiaMultiIndicador(Strategy):
         """
         Inicializa a estratégia: calcula MAs e prepara séries de sinais.
         """
-        current_index = pd.to_datetime(self.data.index)
-        close_series = pd.Series(self.data.Close, index=current_index)
+        # Garante que os dados sejam Series do Pandas para operações vetoriais
+        close_series = pd.Series(self.data.Close, index=self.data.index)
 
-        self.atr_series_pd = pd.Series(self.data.ATR_I, index=current_index)
-
+        # --- Cálculo das Médias Móveis (Ondas) ---
         ma_functions = {'SMA': sma, 'EMA': ema, 'WMA': wma, 'HMA': hma}
         try:
             func_ma_rapida = ma_functions[self.fast_ma_type_est]
@@ -59,33 +58,57 @@ class EstrategiaMultiIndicador(Strategy):
 
         fast_len = int(self.fast_ma_len_otim)
         slow_len = int(self.slow_ma_len_otim)
-
         ma_rapida_series = func_ma_rapida(close_series, fast_len)
         ma_lenta_series = func_ma_lenta(close_series, slow_len)
 
-        self.sinal_compra_mm_series = ((ma_rapida_series > ma_lenta_series) & (ma_rapida_series.shift(1) <= ma_lenta_series.shift(1)))
-        self.sinal_venda_mm_series = ((ma_rapida_series < ma_lenta_series) & (ma_rapida_series.shift(1) >= ma_lenta_series.shift(1)))
+        sinal_compra_mm_series = (ma_rapida_series > ma_lenta_series) & (ma_rapida_series.shift(1) <= ma_lenta_series.shift(1))
+        sinal_venda_mm_series = (ma_rapida_series < ma_lenta_series) & (ma_rapida_series.shift(1) >= ma_lenta_series.shift(1))
 
-        self.zcv_zona_num_series_pd = pd.Series(self.data.ZCV_Zona_Num_I, index=current_index)
-        self.vader_signal_series_pd = pd.Series(self.data.VADER_Signal_I, index=current_index)
+        # --- Condições de base dos indicadores ---
+        cond_ondas_compra = sinal_compra_mm_series == True
+        cond_zonas_compra = pd.Series(self.data.ZCV_Zona_Num_I, index=self.data.index).isin([1, 2])
+        cond_vader_positivo = self.data.VADER_Signal_I > 0
+        cond_vader_cruzou_zero_up = (self.data.VADER_Signal_I > 0) & (pd.Series(self.data.VADER_Signal_I, index=self.data.index).shift(1) <= 0)
 
-        cond_ondas_compra = self.sinal_compra_mm_series == True
-        cond_zonas_compra = self.zcv_zona_num_series_pd.isin([1, 2])
-        cond_vader_positivo = self.vader_signal_series_pd > 0
-        cond_vader_cruzou_zero_up = (self.vader_signal_series_pd > 0) & (self.vader_signal_series_pd.shift(1) <= 0)
+        cond_ondas_venda = sinal_venda_mm_series == True
+        cond_zonas_venda = pd.Series(self.data.ZCV_Zona_Num_I, index=self.data.index).isin([-1, -2])
+        cond_vader_negativo = self.data.VADER_Signal_I < 0
+        cond_vader_cruzou_zero_down = (self.data.VADER_Signal_I < 0) & (pd.Series(self.data.VADER_Signal_I, index=self.data.index).shift(1) >= 0)
 
-        cond_ondas_venda = self.sinal_venda_mm_series == True
-        cond_zonas_venda = self.zcv_zona_num_series_pd.isin([-1, -2])
-        cond_vader_negativo = self.vader_signal_series_pd < 0
-        cond_vader_cruzou_zero_down = (self.vader_signal_series_pd < 0) & (self.vader_signal_series_pd.shift(1) >= 0)
+        # --- FILTROS AVANÇADOS (CONFIGURÁVEIS) ---
+        # Filtro de Regime de Mercado
+        if config.USAR_FILTRO_REGIME_MERCADO:
+            regime_ma = pd.Series(self.data.Regime_MA, index=self.data.index)
+            cond_tendencia_alta = (close_series > regime_ma) | regime_ma.isna()
+            cond_tendencia_baixa = (close_series < regime_ma) | regime_ma.isna()
+        else:
+            cond_tendencia_alta = cond_tendencia_baixa = pd.Series(True, index=self.data.index)
 
-        self.compra_a_series = (cond_ondas_compra & cond_zonas_compra & cond_vader_positivo).fillna(False)
-        self.venda_a_series = (cond_ondas_venda & cond_zonas_venda & cond_vader_negativo).fillna(False)
-        self.compra_b_series = (cond_ondas_compra & cond_zonas_compra & cond_vader_cruzou_zero_up).fillna(False)
-        self.venda_b_series = (cond_ondas_venda & cond_zonas_venda & cond_vader_cruzou_zero_down).fillna(False)
+        # Filtro de Confirmação (Stochastic RSI)
+        if config.USAR_FILTRO_STOCH_RSI:
+            stoch_k = pd.Series(self.data.StochRSI_K, index=self.data.index)
+            stoch_d = pd.Series(self.data.StochRSI_D, index=self.data.index)
+            params = config.STOCH_RSI_FILTER_PARAMS
+            cond_stoch_compra = (stoch_k > stoch_d) & (stoch_k.shift(1) <= stoch_d.shift(1)) & (stoch_k < params['limite_compra'])
+            cond_stoch_venda = (stoch_k < stoch_d) & (stoch_k.shift(1) >= stoch_d.shift(1)) & (stoch_k > params['limite_venda'])
+            cond_stoch_compra = cond_stoch_compra | stoch_k.isna()
+            cond_stoch_venda = cond_stoch_venda | stoch_k.isna()
+        else:
+            cond_stoch_compra = cond_stoch_venda = pd.Series(True, index=self.data.index)
+
+        # --- Lógica de Entrada Final com os Novos Filtros ---
+        self.compra_a_series = (cond_ondas_compra & cond_zonas_compra & cond_vader_positivo & cond_tendencia_alta & cond_stoch_compra).fillna(False)
+        self.venda_a_series = (cond_ondas_venda & cond_zonas_venda & cond_vader_negativo & cond_tendencia_baixa & cond_stoch_venda).fillna(False)
+        self.compra_b_series = (cond_ondas_compra & cond_zonas_compra & cond_vader_cruzou_zero_up & cond_tendencia_alta & cond_stoch_compra).fillna(False)
+        self.venda_b_series = (cond_ondas_venda & cond_zonas_venda & cond_vader_cruzou_zero_down & cond_tendencia_baixa & cond_stoch_venda).fillna(False)
 
         self.sl_multiplicador_final = float(self.multiplicador_sl_atr)
         self.tp_rr_final = float(self.tp_rr_otim)
+
+        # --- Atributos para o método next() ---
+        self.sinal_compra_mm_series = sinal_compra_mm_series
+        self.sinal_venda_mm_series = sinal_venda_mm_series
+        self.atr_series_pd = pd.Series(self.data.ATR_I, index=self.data.index)
 
     def next(self):
         """
@@ -161,25 +184,65 @@ def prepare_data_for_asset(coin: str, start_date: datetime, end_date: datetime) 
         df_bt = pd.merge_asof(df_bt.sort_index(), fng_data.sort_index(), left_index=True, right_index=True, direction='backward')
         df_bt[['fng_value', 'fng_classification']] = df_bt[['fng_value', 'fng_classification']].ffill()
 
+    # --- FILTRO DE REGIME DE MERCADO (OPCIONAL) ---
+    regime_ma_col_name = 'Regime_MA'
+    if config.USAR_FILTRO_REGIME_MERCADO:
+        params = config.REGIME_FILTER_PARAMS
+        logger.info(f"Buscando dados {params['timeframe']} para o filtro de tendência para {coin}...")
+        start_date_regime_dt = end_date_dt - timedelta(days=config.DIAS_HISTORICO + 250)
+        df_regime = fetch_bybit_kline(
+            symbol=coin, interval=params['timeframe'],
+            start_time_dt=start_date_regime_dt, end_time_dt=end_date_dt, category='linear'
+        )
+        ma_periodo = params['ma_periodo']
+        if not df_regime.empty and len(df_regime) >= ma_periodo:
+            df_regime[regime_ma_col_name] = ema(df_regime['close'], length=ma_periodo)
+            df_regime_to_merge = df_regime[[regime_ma_col_name]].copy()
+            df_bt = pd.merge_asof(
+                left=df_bt.sort_index(), right=df_regime_to_merge.sort_index(),
+                left_index=True, right_index=True, direction='backward'
+            )
+            df_bt[regime_ma_col_name] = df_bt[regime_ma_col_name].ffill()
+            logger.info(f"Filtro de tendência (EMA {ma_periodo} {params['timeframe']}) mesclado.")
+        else:
+            logger.warning(f"Dados insuficientes para EMA {ma_periodo} em {coin}. Filtro de tendência desativado.")
+            df_bt[regime_ma_col_name] = np.nan
+    else:
+        df_bt[regime_ma_col_name] = np.nan # Coluna vazia se filtro desativado
+    # --- FIM FILTRO REGIME ---
+
     logger.info(f"Calculando indicadores para {coin}...")
     df_bt = calcular_zonas_compra_venda(df_bt, high_col='High', low_col='Low', close_col='Close', periodo=config.ZONAS_PERIODO)
     df_bt = calcular_sentimento_vader(df_bt, price_col='Close', vol_col='Volume', high_col='High', low_col='Low', **config.VADER_PARAMS)
     df_bt = calcular_atr(df_bt, periodo=config.ATR_PERIODO, high_col='High', low_col='Low', close_col='Close')
-    df_bt = calcular_indicadores_talib(df_bt)
+
+    stoch_params = config.STOCH_RSI_FILTER_PARAMS if config.USAR_FILTRO_STOCH_RSI else None
+    df_bt = calcular_indicadores_talib(df_bt, stoch_rsi_params=stoch_params)
 
     zonas_map = {'Strong Buy': 2, 'Buy': 1, 'Neutral': 0, 'Sell': -1, 'Strong Sell': -2}
     df_bt['ZCV_Zona_Num_Map'] = df_bt['zcv_zona'].map(zonas_map).fillna(0)
     df_bt.rename(columns={'ZCV_Zona_Num_Map': 'ZCV_Zona_Num_I', 'vader_signal': 'VADER_Signal_I', f'ATR_{config.ATR_PERIODO}': 'ATR_I'}, inplace=True)
 
-    colunas_essenciais = ['Open', 'High', 'Low', 'Close', 'Volume', 'ZCV_Zona_Num_I', 'VADER_Signal_I', 'ATR_I', 'fng_value']
-    df_bt.dropna(subset=colunas_essenciais, inplace=True)
+    colunas_core_para_dropna = ['Open', 'High', 'Low', 'Close', 'Volume', 'ZCV_Zona_Num_I', 'VADER_Signal_I', 'ATR_I', 'fng_value']
+    df_bt.dropna(subset=colunas_core_para_dropna, inplace=True)
 
     if df_bt.empty:
-        logger.warning(f"DataFrame para {coin} ficou VAZIO após limpeza. Pulando...")
+        logger.warning(f"DataFrame para {coin} ficou VAZIO após limpeza dos indicadores principais. Pulando...")
         return None
 
+    # Adiciona colunas opcionais à lista final se os filtros estiverem ativos
+    colunas_finais = colunas_core_para_dropna + [regime_ma_col_name]
+    if config.USAR_FILTRO_STOCH_RSI:
+        colunas_finais.extend(['StochRSI_K', 'StochRSI_D'])
+
+    # Garante que as colunas existam, mesmo que vazias, para evitar erros na estratégia
+    for col in colunas_finais:
+        if col not in df_bt.columns:
+            df_bt[col] = np.nan
+
     logger.info(f"Dados para {coin} preparados: {len(df_bt)} velas.")
-    return df_bt[colunas_essenciais].copy()
+    colunas_existentes = [col for col in colunas_finais if col in df_bt.columns]
+    return df_bt[colunas_existentes].copy()
 
 def run_backtest_or_optimize(df: pd.DataFrame, coin: str):
     """Executa o backtest ou a otimização para um único ativo."""
