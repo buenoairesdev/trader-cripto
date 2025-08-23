@@ -55,6 +55,26 @@ VADER_PARAMS = {
     'show_senti': False, 'senti_len': 20, 'v_calc': 'Relative', 'vlookbk': 20
 }
 
+# --- FILTROS AVANÇADOS DA ESTRATÉGIA ---
+USAR_FILTRO_REGIME_MERCADO = True  # True para usar o filtro de tendência de longo prazo (ex: EMA 200 Diária)
+USAR_FILTRO_STOCH_RSI = True       # True para usar o filtro de confirmação do StochRSI
+
+# Parâmetros para o Filtro de Regime de Mercado
+REGIME_FILTER_PARAMS = {
+    'timeframe': 'D',      # Timeframe para calcular a MA de tendência ('D', '240', etc.)
+    'ma_periodo': 200,     # Período da Média Móvel de tendência
+}
+
+# Parâmetros para o Filtro Stochastic RSI
+STOCH_RSI_FILTER_PARAMS = {
+    'periodo_rsi': 14,
+    'periodo_stoch': 14,
+    'periodo_k': 3,
+    'periodo_d': 3,
+    'limite_compra': 80,  # Não comprar se StochRSI > 80 (evitar sobrecompra)
+    'limite_venda': 20,   # Não vender se StochRSI < 20 (evitar sobrevenda)
+}
+
 # --- PARÂMETROS DA ESTRATÉGIA (Usados no modo NÃO OTIMIZADO) ---
 # Tipos de Média Móvel a serem usados na estratégia.
 # Opções: 'SMA', 'EMA', 'WMA', 'HMA'
