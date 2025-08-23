@@ -89,8 +89,12 @@ class EstrategiaMultiIndicador(Strategy):
             stoch_k = pd.Series(self.data.StochRSI_K, index=self.data.index)
             stoch_d = pd.Series(self.data.StochRSI_D, index=self.data.index)
             params = config.STOCH_RSI_FILTER_PARAMS
-            cond_stoch_compra = (stoch_k > stoch_d) & (stoch_k.shift(1) <= stoch_d.shift(1)) & (stoch_k < params['limite_compra'])
-            cond_stoch_venda = (stoch_k < stoch_d) & (stoch_k.shift(1) >= stoch_d.shift(1)) & (stoch_k > params['limite_venda'])
+            # Lógica de ESTADO (mais permissiva) em vez de CRUZAMENTO
+            # Compra: K > D (momentum de alta) E K < limite (não sobrecomprado)
+            cond_stoch_compra = (stoch_k > stoch_d) & (stoch_k < params['limite_compra'])
+            # Venda: K < D (momentum de baixa) E K > limite (não sobrevendido)
+            cond_stoch_venda = (stoch_k < stoch_d) & (stoch_k > params['limite_venda'])
+            # Ignora o filtro se o indicador não estiver disponível
             cond_stoch_compra = cond_stoch_compra | stoch_k.isna()
             cond_stoch_venda = cond_stoch_venda | stoch_k.isna()
         else:

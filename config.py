@@ -71,8 +71,8 @@ STOCH_RSI_FILTER_PARAMS = {
     'periodo_stoch': 14,
     'periodo_k': 3,
     'periodo_d': 3,
-    'limite_compra': 80,  # Não comprar se StochRSI > 80 (evitar sobrecompra)
-    'limite_venda': 20,   # Não vender se StochRSI < 20 (evitar sobrevenda)
+    'limite_compra': 70,  # Nova lógica: Não comprar se já estiver acima de 70
+    'limite_venda': 30,   # Nova lógica: Não vender se já estiver abaixo de 30
 }
 
 # --- PARÂMETROS DA ESTRATÉGIA (Usados no modo NÃO OTIMIZADO) ---
