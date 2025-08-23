@@ -26,7 +26,7 @@ def fetch_fear_and_greed_index(limit: int = 0) -> pd.DataFrame:
 
         df = pd.DataFrame(data)
         df['value'] = pd.to_numeric(df['value'])
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+        df['timestamp'] = pd.to_datetime(pd.to_numeric(df['timestamp']), unit='s').dt.tz_localize('UTC')
         df = df.set_index('timestamp')
         df = df.rename(columns={'value': 'fng_value', 'value_classification': 'fng_classification'})
 
